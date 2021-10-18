@@ -1,3 +1,15 @@
+
+#----------------------------------
+### useful packages
+require(MCMCpack)
+require(mvtnorm)
+require("MASS")
+require(msm)
+
+
+#----------------------------------
+### distance in space
+
 distf = function(coord){
   nI = dim(coord)[1]
   result = diag(nI)*0
@@ -7,6 +19,7 @@ distf = function(coord){
   }}
   result
 }
+
 
 #-------------------------------------
 #### correlation matrix
