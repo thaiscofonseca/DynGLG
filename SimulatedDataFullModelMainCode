@@ -1,4 +1,48 @@
+####### loading data
+load("simulatedFullData.rda") ### vecz simulado (dado completo full sem cov)
+vecz = datfull
+
+dim(vecz)
+J= nrow(vecz) ;I = ncol(vecz) ### 303 por 61
+
+indout = c(2,8,28,37,44)
+
+z = vecz[,-indout]   
+Inew = I-length(indout)  ##  locations (estimation) 
+
+load("infosites4.rda") ### sites
+
+lat<- info.sites4$lat[-indout] ; long<- info.sites4$long[-indout] ; 
+x1<-info.sites4$type[-indout]
+Plat<- (lat - median(lat))/diff(quantile(lat, c(0.25,0.75))) 
+Plong<- (long - median(long))/diff(quantile(long, c(0.25,0.75))) 
+Ptemp = (t(dt.temp4[-indout,])-median(t(dt.temp4[-indout,])))/diff(quantile(dt.temp4[-indout,], c(0.25,0.75))) 
+Pws = (t(dt.ws4[-indout,])-median(t(dt.ws4[-indout,])))/diff(quantile(dt.ws4[-indout,], c(0.25,0.75))) 
+
+lat.out<- info.sites4$lat[indout] ; long.out<- info.sites4$long[indout] ; 
+x1.out = info.sites4$type[indout]
+Plat.out<- (lat.out - median(lat.out))/diff(quantile(lat.out, c(0.25,0.75))) 
+Plong.out<- (long.out - median(long.out))/diff(quantile(long.out, c(0.25,0.75))) 
+Ptemp.out = (t(dt.temp4[indout,])-median(t(dt.temp4[indout,])))/diff(quantile(dt.temp4[indout,], c(0.25,0.75))) 
+Pws.out = (t(dt.ws4[indout,])-median(t(dt.ws4[indout,])))/diff(quantile(dt.ws4[indout,], c(0.25,0.75))) 
+
+## coordinates
+coords<- cbind(lat,long)
+### distance matrix
+distS<- distf(coords)
+median(distS)
+max(distS)
+
+### distance matrix
+coords.out<- cbind(lat.out,long.out)
+distS.tot<- as.matrix(distf(rbind(coords,coords.out)))
+
+
+
+
 #------------------------------------------------------------------------------
+#### main code MCMC
+
 
 M = 20000
 theta= matrix(0,M,9)  ## sig2, phi, alpha, nu, like, like2
