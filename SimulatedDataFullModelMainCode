@@ -1,0 +1,290 @@
+#------------------------------------------------------------------------------
+
+M = 20000
+theta= matrix(0,M,9)  ## sig2, phi, alpha, nu, like, like2
+d0.post<- matrix(NA, M, ncol=J)
+d1.post<- matrix(NA, M, ncol=J)
+d2.post<- matrix(NA, M, ncol=J)
+d3.post<- matrix(NA, M, ncol=J)
+d4.post<- matrix(NA, M, ncol=J)
+lambda.post<- array(data=NA, c(M,Inew,J))
+mu.post<- matrix(NA, M, ncol=J)
+lambda1.post<- array(data=NA, c(M,Inew))
+lambda2.post<- array(data=NA, c(M,J))
+dd.post<- array(data=NA, c(M,2,J)) #### tirei intercepto
+
+ra = .05;  rnu1= 1.0; rnu2 = 0.5 ; ral=0.04 ; raa = .1; 
+rs2=0.1 ; rt2=0.08
+#rlamb = c(0.002,0.002,0.005, 0.01) 
+rlamb = c(0.02,0.02,0.02, 0.02) 
+rlamb2 = rep(0.09,10) 
+
+cont1 = 0; cont2=0;cont3=0; cont4=rep(0,4); cont3b = 0;  ## por alpha and phi
+cont4b<- rep(0,10)
+
+
+
+#------------------------------------------------------------------
+### initial values
+sig2k = mean(apply(z,1,var));  
+tau2k= 0.0;   
+#tau2k = 0.1*sig2k
+nuk=0.15; ak = 0.5;alphak= 1
+C1<- CauchyCov(distS, ak, alphak)
+
+
+nu1k = 0.1
+loglamb1k = mvrnorm(1, (-nu1k/2)*rep(1,Inew) , nu1k*C1)
+nu2k = 0.1
+mutk = rep(0,J)
+loglamb2k = rnorm(J, (-nu2k/2)+mutk , nu2k*1)
+
+loglambk = matrix(NA,J,Inew)
+for (i in 1:Inew){ for (j in 1:J){ loglambk[j,i] <- loglamb1k[i]+loglamb2k[j] }}
+
+
+
+#-----------------------------------------------------------------
+#### FFBS information
+#### for theta.t
+#Ft<- t(cbind(rep(1,Inew), Plat, Plong, Palt)) ##  n x r
+#Ft<- t(cbind(rep(1,Inew), Plat, Plong)) ##  n x r
+Ftt = NULL
+for (j in 1:J){
+  Ftt[[j]] = t(cbind(rep(1,Inew), Plat, Plong, Ptemp[j,],Pws[j,])) ##  n x r
+}
+R = dim(Ftt[[1]])[1]
+Gt<- diag(R)  ### p+1 covariates    ### n x n 
+C0<- 100*diag(R)
+m0<- rep(0,R)
+discount<- c(.99,.95,.90)
+### for mu.t
+#m1<- 0 ; C11<- 100 ; Ft1<- t(rep(1,Inew)); Gt1<- 1  
+d2<- c(.99,.95,.90)  ## n x n
+Ft1 = NULL
+Ft1 = t(cbind( apply(Ptemp,1,mean),apply(Pws,1,mean))) ##  n x r
+#Ft1 = t(cbind(apply(Ptemp,1,mean),apply(Pws,1,mean))) ##  n x r
+
+R1 = dim(Ft1)[1]
+Gt1<- diag(R1)  ### p+1 covariates    ### n x n 
+C11<- 100*diag(R1)
+m1<- rep(0,R1)
+##################################################
+In<-diag(1, Inew)  ## matriz diagonal de 1's
+
+
+#*********************************** MCMC *****************************/
+ind = 1:Inew
+region3 = ind[which((coords[,1]< (52.5))&(coords[,2]< (-1.8)))] 
+region2 = ind[which((coords[,1]>= (52.5))&(coords[,2]>= (-1.8)))] 
+region1 = ind[which((coords[,1]>= (52.5))&(coords[,2]< (-1.8)))] 
+region4 = ind[which((coords[,1]< (52.5))&(coords[,2]>= (-1.8)))]
+
+indr = c(region1,region2,region3,region4)
+n<-NULL
+n[1] = length(region1) 
+n[2] = length(region2) 
+n[3] = length(region3) 
+n[4] = length(region4) 
+nr = c(0,cumsum(n))
+
+indrt = 1:J
+#nt = c(rep(36,9),365-sum(rep(36,9)))
+nt = c(rep(30,9),J-sum(rep(30,9)))
+nrt = c(0,cumsum(nt))
+
+epsk = z*0
+
+lverok = LogVeroNG(z-epsk,distS,Plat,Plong,Ptemp,Pws,d0k,d1k,d2k,d3k,d4k,sig2k,ak,alphak,loglamb1k,loglamb2k,tau2k)   ### d0k,d1k,d2k,d3k
+lverok1 = LogVeroLogLamb1(loglamb1k,distS,ak,alphak,nu1k)
+lverok2 = LogVeroLogLamb2(loglamb2k,nu2k,mutk)
+
+a1k = 10
+alpha1k = 0.5
+sig2k = var(as.vector(z))
+
+system.time(for (k in 1:M){
+  
+  Cc = CauchyCov(distS,ak,alphak)   
+  Cinv = solve(Cc)
+  
+  ## FFBS for deltas (each time t)
+  dt<- FFBS(z-epsk,Cc,discount[1],m0,C0,Ftt,Gt, loglamb1k,loglamb2k,sig2k,tau2k, In)$d  
+  d0.post[k,]<- dt[1,1,1:J] ;   d1.post[k,]<- dt[2,1,1:J] ;   
+  d2.post[k,]<- dt[3,1,1:J] ;   d3.post[k,]<- dt[4,1,1:J];
+  d4.post[k,]<- dt[5,1,1:J]
+  
+#  Sinv = diag(as.vector(sqrt(exp(loglamb1k))))%*%Cinv%*%diag(as.vector(sqrt(exp(loglamb1k))))
+#  for (j in 1:J){ 
+#    mu = dt[1,1,j] +  dt[2,1,j]*Plat +  dt[3,1,j]*Plong +  dt[4,1,j]*Ptemp[j,]+  dt[5,1,j]*Pws[j,]
+#    aux = solve(exp(loglamb2k[j])*Sinv/sig2k+In/tau2k)
+#    epsk[j,] = mvrnorm(1,aux%*%(exp(loglamb2k[j])*Sinv/sig2k)%*%(z[j,]-mu),aux) 
+ # }
+  
+  ### FFBS for mus (each time t)  - lambda_t
+  V1<- nu2k*1
+  z.lk<- matrix(loglamb2k + (nu2k/2),J,1)
+  
+  aux = FFBS.mu(z.lk, V1, d2[1], m1, C11, Ft1, Gt1)$d
+  mu.post[k,] <- apply(aux[1:R1,1,1:J]*Ft1,2,sum)
+  dd.post[k,,] = aux[,1,]
+  
+  d0k<- d0.post[k,] ; d1k<- d1.post[k,] ; d2k<- d2.post[k,]; d3k<-d3.post[k,]; d4k<-d4.post[k,]
+  mutk<- mu.post[k,]
+  
+  loglamb1prop = rep(NA, Inew)
+  ###################### generate lambda(s,t)
+  for (j in 1:4){
+    
+    region = indr[(nr[j]+1):nr[j+1]]
+    loglamb1prop = loglamb1k;
+    loglamb1prop[region] = loglamb1k[region] + rlamb[j]*rnorm(length(region));
+    
+    lverok = LogVeroNG(z-epsk,distS,Plat,Plong,Ptemp,Pws,d0k,d1k,d2k,d3k,d4k,sig2k,ak,alphak,loglamb1k,loglamb2k,tau2k)   ### d0k,d1k,d2k,d3k
+    lverok1 = LogVeroLogLamb1(loglamb1k,distS,a1k,alpha1k,nu1k)
+    lveroprop = LogVeroNG(z-epsk,distS,Plat,Plong,Ptemp,Pws,d0k,d1k,d2k,d3k,d4k,sig2k,ak,alphak,loglamb1prop,loglamb2k,tau2k);    ### d0k,d1k,d2k,d3k
+    lveroprop1 = LogVeroLogLamb1(loglamb1prop,distS,a1k,alpha1k,nu1k)
+    
+    auxprop = lveroprop+lveroprop1 ;
+    auxk = lverok+lverok1 ;
+    ratio = auxprop-auxk; test = runif(1);
+    
+    if (ratio>log(test)) {
+      loglamb1k[region] = loglamb1prop[region];
+      lverok1 = lveroprop1; lverok = lveroprop;
+      cont4[j]<- cont4[j]+1
+    }
+    
+    lambda1.post[k,]<- exp(loglamb1k)   
+    
+    
+  }
+  
+  loglamb2prop = rep(NA, J)
+  ###################### generate lambda(s,t)
+  for (j in 1:10){
+    
+    regiont = indrt[(nrt[j]+1):nrt[j+1]]
+    loglamb2prop = loglamb2k;
+    loglamb2prop[regiont] = loglamb2k[regiont] + rlamb2[j]*rnorm(length(regiont));
+    
+    lverok = LogVeroNGt(z-epsk,distS,Plat,Plong,Ptemp,Pws,d0k,d1k,d2k,d3k,d4k,sig2k,ak,alphak,loglamb1k,loglamb2k,tau2k,regiont)   ### d0k,d1k,d2k,d3k
+    lverok2 = LogVeroLogLamb2(loglamb2k[regiont],nu2k,mutk[regiont])
+    lveroprop = LogVeroNGt(z-epsk,distS,Plat,Plong,Ptemp,Pws,d0k,d1k,d2k,d3k,d4k,sig2k,ak,alphak,loglamb1k,loglamb2prop,tau2k,regiont);    ### d0k,d1k,d2k,d3k
+    lveroprop2 = LogVeroLogLamb2(loglamb2prop[regiont],nu2k,mutk[regiont])
+    
+    auxprop = lveroprop+lveroprop2 ;
+    auxk = lverok+lverok2 ;
+    ratio = auxprop-auxk; test = runif(1);
+    
+    if (ratio>log(test)) {
+      loglamb2k[regiont] = loglamb2prop[regiont];
+      cont4b[j]<- cont4b[j]+1
+    }
+    
+    lambda2.post[k,]<- exp(loglamb2k)  
+    
+    
+  }
+  
+  ### gibbs for tau2
+ #  bk = 0
+ # for (j in 1:J){bk = bk + t(epsk[j,])%*%epsk[j,]}
+ # tau2k = 1/rgamma(1,(J*Inew)/2+1,bk/2)
+  
+  #  tau2k = 0
+  
+  ### M-H for phi and alpha
+  
+  aprop = exp(log(ak)+ra*rnorm(1));
+  alphaAux = log(alphak/(2-alphak))+ral*rnorm(1);
+  alphaprop = 2*exp(alphaAux)/(1+exp(alphaAux));
+  
+  
+  lverok = LogVeroNG(z-epsk,distS,Plat,Plong,Ptemp,Pws,d0k,d1k,d2k,d3k,d4k,sig2k,ak,alphak,loglamb1k,loglamb2k,tau2k)
+  lveroprop = LogVeroNG(z-epsk,distS,Plat,Plong,Ptemp,Pws,d0k,d1k,d2k,d3k,d4k,sig2k,aprop,alphaprop,loglamb1k,loglamb2k,tau2k)
+   
+  auxprop = lveroprop+log(dgamma(aprop,1, 2.3/median(distS))) + log(aprop)+ log(alphaprop*(2-alphaprop))    #
+  auxk = lverok+log(dgamma(ak,1, 2.3/median(distS)))  + log(ak) +   log(alphak*(2-alphak))  ##
+  
+  ratio = auxprop-auxk;   test = runif(1);
+  if (ratio>log(test)) {
+    ak = aprop;
+    alphak = alphaprop;
+    lverok = lveroprop;
+    cont2 = cont2 + 1;
+  }
+  
+  ### Metropolis-Hastings for nu
+  a1prop = exp(log(a1k)+raa*rnorm(1));
+  
+  nu1prop = exp(log(nu1k)+rnu1*rnorm(1));
+  lverok1 = LogVeroLogLamb1(loglamb1k,distS,a1k,alpha1k,nu1k)
+  lveroprop1 = LogVeroLogLamb1(loglamb1k,distS,a1prop, alpha1k, nu1prop)
+  
+  auxprop = lveroprop1+log(nu1prop)+  log(dgamma(nu1prop,1,5))+log(a1prop)+  log(dgamma(a1prop,1,5))    #log(dgig(nuprop, 0, 0.75,6))  #
+  auxk = lverok1+log(nu1k)+   log(dgamma(nu1k,1,5)) +log(a1k)+   log(dgamma(a1k,1,5))
+  ratio = auxprop-auxk;   test = runif(1);
+  if (ratio>log(test)) {
+    nu1k = nu1prop;
+    a1k = a1prop;
+    lverok1 = lveroprop1;
+    cont3 = cont3 + 1;
+  }
+  
+  ####### nu2
+  
+  nu2prop = exp(log(nu2k)+rnu2*rnorm(1));
+  lverok2 = LogVeroLogLamb2(loglamb2k, nu2k,mutk)
+  lveroprop2 = LogVeroLogLamb2(loglamb2k, nu2prop,mutk)
+  
+  auxprop = lveroprop2+log(nu2prop)+  log(dgamma(nu2prop,1,5))    
+  auxk = lverok2+log(nu2k)+   log(dgamma(nu2k,1,5)) 
+  ratio = auxprop-auxk;   test = runif(1);
+  if (ratio>log(test)) {
+    nu2k = nu2prop;
+    lverok2 = lveroprop2;
+    cont3b = cont3b + 1;
+  }
+  
+  
+  theta[k,1]= sig2k;
+  theta[k,2] = ak;
+  theta[k,3] = alphak;
+  theta[k,4] = nu1k;
+  theta[k,5] = tau2k;
+  theta[k,6] = lverok;
+  theta[k,7] = lverok2;
+  theta[k,8] = nu2k;
+  theta[k,9] = a1k;
+  
+  print(k)
+  
+  
+}) 
+
+
+#save.image("OutputUKStau2Cov0203.RData")
+
+### aceitacao
+cont1/M   ## sig2 tau2
+cont2/M   #a e alpha
+cont3b/M ### nu2
+cont3/M ### nu1 e a1
+cont4b/M ### lambda2
+cont4/M ### lambda1
+
+
+
+plot(theta[1:M,1],t="l",main=expression(sigma^2))
+plot(theta[1:M,2],t="l",main=expression(a))
+plot(theta[1:M,3],t="l",main=expression(alpha))
+plot(theta[1:M,4],t="l",main=expression(nu[1]))
+plot(theta[1:M,5],t="l",main=expression(tau^2))
+plot(theta[1:M,8],t="l",main=expression(nu[2]))
+plot(theta[1:M,9],t="l",main=expression(a[1]))
+
+plot(lambda1.post[1:M,50],t="l") 
+plot(lambda1.post[1:M,40],t="l") 
+plot(lambda2.post[1:M,40],t="l") 
+plot(lambda2.post[1:M,260],t="l") 
